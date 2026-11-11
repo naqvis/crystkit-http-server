@@ -1,0 +1,19 @@
+name: crystkit-http-server
+version: 1.0.0
+
+authors:
+  - Ali Naqvi <syed.alinaqvi@gmail.com>
+
+description: |
+  Loopback HTTP server and RFC 7469 TLS certificate pinning for CrystKit,
+  including an IPC plugin exposing server.start, server.stop, and server.status.
+
+crystal: ">= 1.21.0"
+
+license: MIT
+
+dependencies:
+  crystkit:
+    github: naqvis/crystkit
+  openssl_ext:
+    github: spider-gazelle/openssl_ext

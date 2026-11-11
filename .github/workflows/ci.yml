@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Download source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libglib2.0-dev \
+            libx11-dev \
+            libxss-dev \
+            libdbus-1-dev \
+            libnotify-dev \
+            libappindicator3-dev \
+            libudev-dev \
+            libsecret-1-dev \
+            libspeechd-dev \
+            libssl-dev \
+            fprintd
+
+      - name: Set up MSVC
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up NuGet
+        if: matrix.os == 'windows-latest'
+        uses: nuget/setup-nuget@v4
+
+      - name: Install WebView2 SDK
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          nuget install Microsoft.Web.Webview2 -Version 1.0.1150.38 -OutputDirectory libs/webview2
+
+      - name: Install shards (Unix)
+        if: matrix.os != 'windows-latest'
+        run: shards update
+
+      - name: Install shards (Windows)
+        if: matrix.os == 'windows-latest'
+        run: shards update --skip-postinstall
+
+      - name: Build webview native library
+        if: matrix.os == 'windows-latest'
+        shell: cmd
+        run: |
+          copy /Y "libs\webview2\Microsoft.Web.WebView2.1.0.1150.38\build\native\include\*.h" "lib\webview\ext\"
+          cd lib\webview\ext
+          cl /D "WEBVIEW_API=__declspec(dllexport)" /std:c++17 /EHsc webview.cc /link /DLL "/OUT:..\..\webview.dll" "/IMPLIB:..\..\webview.lib"
+          cd ..\..
+          for /f "delims=" %%i in ('crystal env CRYSTAL_LIBRARY_PATH') do set "CRYSTAL_LIB=%%i"
+          copy /Y webview.lib "%CRYSTAL_LIB%"
+          copy /Y webview.dll "%GITHUB_WORKSPACE%\"
+          echo %GITHUB_WORKSPACE%>>"%GITHUB_PATH%"
+
+      - name: Run tests
+        run: crystal spec
+
+      - name: Check formatting
+        run: crystal tool format --check
+        if: matrix.os == 'ubuntu-latest'
